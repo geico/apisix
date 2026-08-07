@@ -70,7 +70,7 @@ done
 
 
 
-=== TEST 2: build_session_opts passes redis mode through for revocation
+=== TEST 2: build_session_opts maps redis mode to explicit revocation backend
 --- config
     location /t {
         content_by_lua_block {
@@ -89,6 +89,7 @@ done
             ngx.say("storage=", tostring(opts.storage))
             ngx.say("redis.host=", opts.redis.host)
             ngx.say("redis.mode=", tostring(opts.redis.mode))
+            ngx.say("revocation=", tostring(opts.revocation))
             ngx.say("revocation_fail_mode=", opts.revocation_fail_mode)
         }
     }
@@ -96,6 +97,7 @@ done
 storage=cookie
 redis.host=redis
 redis.mode=revocation
+revocation=redis
 revocation_fail_mode=open
 
 
@@ -118,12 +120,14 @@ revocation_fail_mode=open
             ngx.say("storage=", opts.storage)
             ngx.say("redis.host=", opts.redis.host)
             ngx.say("redis.mode=", tostring(opts.redis.mode))
+            ngx.say("revocation=", tostring(opts.revocation))
         }
     }
 --- response_body
 storage=redis
 redis.host=127.0.0.1
 redis.mode=storage
+revocation=nil
 
 
 
@@ -242,12 +246,12 @@ done
 
 
 
-=== TEST 8: redis.mode defaults to revocation when storage is cookie
+=== TEST 8: omitted redis.mode maps to revocation when storage is cookie
 --- config
     location /t {
         content_by_lua_block {
             local plugin = require("apisix.plugins.openid-connect")
-            local ok, err = plugin.check_schema({
+            local conf = {
                 client_id = "a",
                 client_secret = "b",
                 discovery = "c",
@@ -258,25 +262,27 @@ done
                         host = "127.0.0.1",
                     },
                 }
-            })
+            }
+            local ok, err = plugin.check_schema(conf)
             if not ok then
                 ngx.say(err)
             else
-                ngx.say("done")
+                local opts = plugin._build_session_opts(conf.session)
+                ngx.say("revocation=", tostring(opts.revocation))
             end
         }
     }
 --- response_body
-done
+revocation=redis
 
 
 
-=== TEST 9: redis.mode defaults to storage when storage is redis
+=== TEST 9: omitted redis.mode does not enable revocation when storage is redis
 --- config
     location /t {
         content_by_lua_block {
             local plugin = require("apisix.plugins.openid-connect")
-            local ok, err = plugin.check_schema({
+            local conf = {
                 client_id = "a",
                 client_secret = "b",
                 discovery = "c",
@@ -288,16 +294,18 @@ done
                         port = 6379,
                     },
                 }
-            })
+            }
+            local ok, err = plugin.check_schema(conf)
             if not ok then
                 ngx.say(err)
             else
-                ngx.say("done")
+                local opts = plugin._build_session_opts(conf.session)
+                ngx.say("revocation=", tostring(opts.revocation))
             end
         }
     }
 --- response_body
-done
+revocation=nil
 
 
 

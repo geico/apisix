@@ -33,22 +33,35 @@ local ngx_encode_base64 = ngx.encode_base64
 local plugin_name       = "openid-connect"
 
 
--- Session config is passed as-is to resty.session.start(); the only
--- translation is the legacy session.cookie.lifetime alias from the
--- lua-resty-session 3.x schema, which is mapped to absolute_timeout
--- when the latter is unset.
+-- Session config is passed to resty.session.start(). The legacy
+-- session.cookie.lifetime alias is mapped to absolute_timeout, and the Redis
+-- role marker is mapped to lua-resty-session's explicit revocation backend.
 local function build_session_opts(session_conf)
     if not session_conf then
         return nil
     end
-    if session_conf.cookie and session_conf.cookie.lifetime then
-        if not session_conf.absolute_timeout then
-            session_conf.absolute_timeout = session_conf.cookie.lifetime
+
+    -- Derive onto a copy: the plugin conf is only shallow cloned per request,
+    -- so mutating it here would persist fields that the session schema forbids.
+    local opts = core.table.clone(session_conf)
+
+    if opts.cookie and opts.cookie.lifetime then
+        if not opts.absolute_timeout then
+            opts.absolute_timeout = opts.cookie.lifetime
             core.log.warn("session.cookie.lifetime is deprecated; ",
                           "use session.absolute_timeout instead")
         end
     end
-    return session_conf
+
+    if opts.redis then
+        local redis_mode = opts.redis.mode
+        if redis_mode == "revocation"
+           or (redis_mode == nil and (opts.storage == nil or opts.storage == "cookie")) then
+            opts.revocation = "redis"
+        end
+    end
+
+    return opts
 end
 
 
