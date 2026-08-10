@@ -59,10 +59,13 @@ local function build_session_opts(session_conf)
         end
     end
 
+    -- Revocation is only meaningful for cookie (stateless) sessions.
+    -- Server-side session storage already deletes on destroy, so never enable
+    -- a denylist when storage is redis (even if mode is set incorrectly).
     if opts.redis then
         local redis_mode = opts.redis.mode
-        if redis_mode == "revocation"
-           or (redis_mode == nil and (opts.storage == nil or opts.storage == "cookie")) then
+        local cookie_storage = opts.storage == nil or opts.storage == "cookie"
+        if cookie_storage and (redis_mode == "revocation" or redis_mode == nil) then
             opts.revocation = "redis"
         end
     end
@@ -180,7 +183,9 @@ local schema = {
                             enum = {"storage", "revocation"},
                             description =
                                 "Whether this Redis connection stores session data "
-                                .. "or the session revocation denylist.",
+                                .. "or the session revocation denylist. Use "
+                                .. "\"storage\" with session.storage=redis; use "
+                                .. "\"revocation\" only with session.storage=cookie.",
                         },
                         host = {
                             type = "string", minLength = 2, default = "127.0.0.1"
@@ -238,8 +243,8 @@ local schema = {
                     enum = {"open", "closed"},
                     default = "open",
                     description =
-                        "When the revocation store is unreachable: open allows requests "
-                        .. "based on JWT expiry only; closed always denies requests.",
+                        "When the revocation store is unreachable: open treats the "
+                        .. "session as not revoked; closed rejects open/destroy.",
                 },
             },
             required = {"secret"},
@@ -556,6 +561,13 @@ function _M.check_schema(conf)
     local ok, err = core.schema.check(schema, conf)
     if not ok then
         return false, err
+    end
+
+    local session = conf.session
+    if session and session.storage == "redis"
+       and session.redis and session.redis.mode == "revocation" then
+        return false,
+            "session.redis.mode cannot be \"revocation\" when session.storage is \"redis\""
     end
 
     if conf.claim_schema and not secret.is_secret_ref(conf.claim_schema) then
