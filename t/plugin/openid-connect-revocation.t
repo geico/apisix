@@ -309,6 +309,60 @@ revocation=nil
 
 
 
+=== TEST 9b: redis storage with mode=revocation is rejected
+--- config
+    location /t {
+        content_by_lua_block {
+            local plugin = require("apisix.plugins.openid-connect")
+            local ok, err = plugin.check_schema({
+                client_id = "a",
+                client_secret = "b",
+                discovery = "c",
+                session = {
+                    secret = "jwcE5v3pM9VhqLxmxFOH9uZaLo8u7KQK",
+                    storage = "redis",
+                    redis = {
+                        host = "127.0.0.1",
+                        port = 6379,
+                        mode = "revocation",
+                    },
+                }
+            })
+            if not ok then
+                ngx.say(err)
+            else
+                ngx.say("ok")
+            end
+        }
+    }
+--- response_body_like
+session.redis.mode cannot be "revocation" when session.storage is "redis"
+
+
+
+=== TEST 9c: build_session_opts ignores mode=revocation when storage is redis
+--- config
+    location /t {
+        content_by_lua_block {
+            local plugin = require("apisix.plugins.openid-connect")
+            local opts = plugin._build_session_opts({
+                secret = "jwcE5v3pM9VhqLxmxFOH9uZaLo8u7KQK",
+                storage = "redis",
+                redis = {
+                    host = "127.0.0.1",
+                    mode = "revocation",
+                },
+            })
+            ngx.say("storage=", opts.storage)
+            ngx.say("revocation=", tostring(opts.revocation))
+        }
+    }
+--- response_body
+storage=redis
+revocation=nil
+
+
+
 === TEST 10: cookie session without redis block is valid
 --- config
     location /t {
