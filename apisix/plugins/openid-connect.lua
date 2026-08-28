@@ -244,13 +244,6 @@ local schema = {
                 redis = {
                     type = "object",
                     properties = {
-                        mode = {
-                            type = "string",
-                            enum = {"storage", "revocation"},
-                            description =
-                                "Whether this Redis connection stores session data "
-                                .. "or the session revocation denylist.",
-                        },
                         host = {
                             type = "string", minLength = 2, default = "127.0.0.1"
                         },
@@ -302,13 +295,18 @@ local schema = {
                         },
                     }
                 },
+                revocation = {
+                    type = "string",
+                    enum = {"redis"},
+                    description = "Redis-backed revocation for cookie sessions.",
+                },
                 revocation_fail_mode = {
                     type = "string",
                     enum = {"open", "closed"},
                     default = "open",
                     description =
-                        "When the revocation store is unreachable: open allows requests "
-                        .. "based on JWT expiry only; closed always denies requests.",
+                        "When the revocation store is unreachable, open treats the "
+                        .. "session as not revoked and closed rejects open/destroy.",
                 },
             },
             required = {"secret"},
@@ -319,6 +317,19 @@ local schema = {
             },
             ["then"] = {
                 required = {"redis"},
+            },
+            allOf = {
+                {
+                    ["if"] = {
+                        required = {"revocation"},
+                    },
+                    ["then"] = {
+                        required = {"redis"},
+                        properties = {
+                            storage = { const = "cookie" },
+                        },
+                    },
+                },
             },
             additionalProperties = false,
         },
